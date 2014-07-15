@@ -2,25 +2,27 @@
 # -*- coding: utf-8 -*-
 
 import wx
-import momsui
-from momsui import MainFrame, ChannelPanel, TitlePanel, ChannelListPanel
+import vcrui
+#from vcrui import MainFrame, ChannelPanel, TitlePanel, ChannelListPanel
 from datetime import datetime, timedelta
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
+import pickle
 
 RECORD_BUFFER_MINUTES = 5
 EPG_MAX_TITLE_LENGTH = 25
 EPG_TITLE_LANGUAGES = ['de','DEU']
+EPG_CACHE_FILENAME = 'programme.pkl'
 TEXT_SCHEDULE_SUCCESS = "\"%s\" wurde zur Aufnahme eingeplant."
 TEXT_SCHEDULE_FAILURE = "Ein Problem ist aufgetreten."
 TEXT_EPG_UPDATING = "Bitte warten. Aktuelle Programminformationen werden geholt..."
-TEXT_EPG_NOINFO = "No information available"
+TEXT_EPG_NOINFO = "Keine Programminformationen verfügbar."
 TEXT_EPG_NOTITLE = 'UNKNOWN'
 
-class TitlePanel ( momsui.TitlePanel ):
+class TitlePanel ( vcrui.TitlePanel ):
   def __init__( self, parent ):
-    momsui.TitlePanel.__init__(self,parent)
+    vcrui.TitlePanel.__init__(self,parent)
     
   def SetChannelName(self, channelName):
     self.channelName = channelName
@@ -50,7 +52,6 @@ class TitlePanel ( momsui.TitlePanel ):
     channelName = self.channelName
     title = self.show['title']
     args = map(str,['tv-schedule-record',startMinute, startHour, startDay, startMonth, startYear, weekday, length, channelName, title.encode('utf-8')])
-    #print args
     try:
       returncode = subprocess.call(args)
     except e:
@@ -60,9 +61,9 @@ class TitlePanel ( momsui.TitlePanel ):
     else:
       wx.MessageDialog(self, TEXT_SCHEDULE_FAILURE, "", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
 
-class MainFrame ( momsui.MainFrame ):
+class MainFrame ( vcrui.MainFrame ):
   def __init__(self,parent):
-    momsui.MainFrame.__init__(self,parent)
+    vcrui.MainFrame.__init__(self,parent)
     
   def addChannelSelectButton(self, channelName, channelID, parent):
     button = wx.Button( parent, wx.ID_ANY, channelName, wx.DefaultPosition, wx.DefaultSize, 0 )
@@ -75,14 +76,14 @@ class MainFrame ( momsui.MainFrame ):
     self.Layout()
     wx.Yield()
     self.m_scrolledWindow.GetSizer().Clear(True)
-    programs = self.readProgrammeData(channelName)
+    programs = self.readProgrammeData(channelName, channelID)
     self.addChannel(programs, channelName, channelID, True)
     self.Layout()
     
   def addChannel(self, programs, channelName, channelID, forceDisplay=False ):
     channelID = "%s.dvb.guide"%channelID
     if channelID in programs or forceDisplay:
-      channelPanel = ChannelPanel(self.m_scrolledWindow)
+      channelPanel = vcrui.ChannelPanel(self.m_scrolledWindow)
       channelPanel.m_channelNameLabel.SetLabel(channelName)
       self.m_scrolledWindow.GetSizer().Add(channelPanel, 0, wx.ALL|wx.EXPAND)
     if channelID not in programs:
@@ -90,42 +91,70 @@ class MainFrame ( momsui.MainFrame ):
         channelPanel.GetSizer().Add(wx.StaticText(channelPanel, wx.ID_ANY, TEXT_EPG_NOINFO), 0, wx.ALL|wx.EXPAND)
     else:
       now = datetime.now()
-      for show in sorted(programs[channelID],key=lambda x:x['start']):
+      for show in programs[channelID]:#sorted(programs[channelID],key=lambda x:x['start']):
         if show['start'] > now:
           titlePanel = TitlePanel(channelPanel)
           titlePanel.SetShow(show)
           titlePanel.SetChannelName(channelName)
           channelPanel.GetSizer().Add(titlePanel, 0, wx.ALL|wx.EXPAND)
 
-  def readProgrammeData(self, channelName):
-    programs = dict()
-    sub = subprocess.Popen(["tv-grab-xmltv", channelName], stdout=subprocess.PIPE)
-    xmlepgdata = sub.communicate()[0]
-    #tree = ET.parse('program.xml')
-    #root = tree.getroot()
-    root = ET.fromstring(xmlepgdata)
-    for programme in root.iter('programme'):
-      sChannel = programme.get('channel')
-      sTitle = TEXT_EPG_NOTITLE
-      #sys.stderr.write('received programme without title - check language filter\n')
-      for title in programme.findall('title'):
-        titleLang = title.get('lang',EPG_TITLE_LANGUAGES[0])
-        if titleLang in EPG_TITLE_LANGUAGES:
-          sTitle = title.text
+  def readProgrammeData(self, channelName, channelID):
+    
+    try:
+      cache = open(EPG_CACHE_FILENAME, 'rb')
+      programs = pickle.load(cache)
+      cache.close()
+      channelID = "%s.dvb.guide"%channelID
+      if channelID in programs and programs[channelID][0]['start'] > datetime.today() - timedelta(days=1):
+        return programs
+    except:
+      programs = dict()
       
-      # these ignore timezone information
-      dtStart = datetime.strptime(programme.get('start').split(' ')[0], '%Y%m%d%H%M%S')
-      dtStop = datetime.strptime(programme.get('stop').split(' ')[0], '%Y%m%d%H%M%S')
-      show = {'start':dtStart, 'stop':dtStop, 'title':sTitle}
-      if sChannel not in programs:
-        programs[sChannel] = [show]
-      else:
-        programs[sChannel].append(show)
+    try:
+      sub = subprocess.Popen(["tv-grab-xmltv", channelName], stdout=subprocess.PIPE)
+      xmlepgdata = sub.communicate()[0]
+      if sub.returncode != 0:
+        raise RuntimeError("Abnormal script termination")
+    except:
+      wx.MessageDialog(self, str(sys.exc_info()[0].__name__)+" "+str(sys.exc_info()[1]), "Unexpected error during subscript execution", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
+      return programs
+      
+    try:
+      #tree = ET.parse('program.xml')
+      #root = tree.getroot()
+      root = ET.fromstring(xmlepgdata)
+      for programme in root.iter('programme'):
+        sChannel = programme.get('channel')
+        sTitle = TEXT_EPG_NOTITLE
+        #sys.stderr.write('received programme without title - check language filter\n')
+        for title in programme.findall('title'):
+          titleLang = title.get('lang',EPG_TITLE_LANGUAGES[0])
+          if titleLang in EPG_TITLE_LANGUAGES:
+            sTitle = title.text
+        
+        # these ignore timezone information
+        dtStart = datetime.strptime(programme.get('start').split(' ')[0], '%Y%m%d%H%M%S')
+        dtStop = datetime.strptime(programme.get('stop').split(' ')[0], '%Y%m%d%H%M%S')
+        show = {'start':dtStart, 'stop':dtStop, 'title':sTitle}
+        if sChannel not in programs:
+          programs[sChannel] = [show]
+        else:
+          programs[sChannel].append(show)
+          
+      for channelID in programs.keys():
+        programs[channelID].sort(key=lambda x:x['start'])
+          
+      cache = open(EPG_CACHE_FILENAME, 'wb')
+      pickle.dump(programs, cache)
+      cache.close()
+    except:
+      wx.MessageDialog(self, str(sys.exc_info()[0].__name__)+" "+str(sys.exc_info()[1]), "Unexpected error during parsing", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
+    
     return programs
 
   def listChannels(self):
     self.m_scrolledWindow.GetSizer().Clear(True)
-    channelListPanel = ChannelListPanel(self)
+    channelListPanel = vcrui.ChannelListPanel(self)
     for line in [line.strip() for line in open('channels.conf')]:
       if line[0] != '#' and line[0] != ';' :
         split = line.split(':')
