@@ -110,20 +110,26 @@ class MainFrame ( vcrui.MainFrame ):
   def onChannelSelectButtonClick( self, channelName, channelID ):
     self.m_scrolledWindow.GetSizer().Clear(True)
     self.m_scrolledWindow.GetSizer().Add(wx.StaticText(self.m_scrolledWindow, wx.ID_ANY, TEXT_EPG_UPDATING), 0, wx.ALL|wx.EXPAND)
+    
+    self.m_gauge = wx.Gauge( self.m_scrolledWindow, wx.ID_ANY, 1000, wx.DefaultPosition, wx.DefaultSize, wx.GA_HORIZONTAL )
+    self.m_gauge.SetValue( 0 ) 
+    self.m_scrolledWindow.GetSizer().Add( self.m_gauge, 0, wx.ALL|wx.EXPAND )
     self.Layout()
     wx.Yield()
-    self.m_scrolledWindow.GetSizer().Clear(True)
-    self._selectedChannelName = channelName
+
+    # remember which channel was chosen, then read epg data in background
+    self._selectedChannelName = channelName 
     self._selectedChannelID = channelID
     self.readProgrammeData(channelName, channelID)
   
   def onEPGData(self, evt):
-    print evt.status
+    if evt.status:
+      self.m_gauge.SetValue(10+ int(990.0/(1.0+2**(-float(evt.status)/200.0+10.0))) ) # fake status progress
     if evt.data:
       self.parseProgrammeData(evt.data)
   
   def onProgrammeDataReady(self, programs):
-    print "onProgrammeDataReady"
+    self.m_scrolledWindow.GetSizer().Clear(True)
     self.addChannel(programs, self._selectedChannelName, self._selectedChannelID)
     self.Layout()
     
