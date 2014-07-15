@@ -124,7 +124,7 @@ class MainFrame ( vcrui.MainFrame ):
   
   def onEPGData(self, evt):
     if evt.status:
-      self.m_gauge.SetValue(10+ int(990.0/(1.0+2**(-float(evt.status)/200.0+10.0))) ) # fake status progress
+      self.m_gauge.SetValue(int(1000.0/(1.0+2**(-float(evt.status)/300.0+5.0))) ) # fake status progress
     if evt.data:
       self.parseProgrammeData(evt.data)
   
@@ -172,6 +172,9 @@ class MainFrame ( vcrui.MainFrame ):
     
   def readProgrammeData(self, channelName, channelID): # TODO: diese funktionen von GUI trennen
     programs = self.loadProgrammeDataFromCache()
+    if not channelID: # a channelID of None means "list all from cache"
+      return programs # circumvents event based progress
+      
     channelID = "%s.dvb.guide"%channelID
     if channelID in programs \
     and programs[channelID][0]['start'] > datetime.today() - timedelta(days=EPG_CACHE_MAX_AGE_DAYS):
@@ -274,7 +277,7 @@ class MainFrame ( vcrui.MainFrame ):
   def addAllChannels(self):
     self.m_scrolledWindow.GetSizer().Clear(True)
     self.m_scrolledWindow.GetSizer().SetOrientation(wx.HORIZONTAL)
-    programs = self.readProgrammeData(None,None) # TODO: this is now defunct
+    programs = self.readProgrammeData(None,None)
     for line in sorted([line.strip() for line in open('channels.conf')]):
       if line[0] != '#' and line[0] != ';' :
         split = line.split(':')
