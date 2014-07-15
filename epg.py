@@ -37,9 +37,9 @@ class TitlePanel ( vcrui.TitlePanel ):
   def SetShow(self, show):
     self.show = show
     title = show['title']
-    if True and len(title) > EPG_MAX_TITLE_LENGTH:
+    if EPG_MAX_TITLE_LENGTH > 0 and len(title) > EPG_MAX_TITLE_LENGTH:
       title = title[:EPG_MAX_TITLE_LENGTH]+'...'
-    self.m_titleLabel.SetLabel(title)
+    self.m_titleLabel.SetLabel(title.replace('&', '&&'))
     self.m_startLabel.SetLabel(show['start'].strftime('%a, %d. %b. %H:%M')) # TODO: eigenes label für tag, separator für "von... bis..."
     self.m_stopLabel.SetLabel(show['stop'].strftime('%H:%M'))
     
@@ -70,7 +70,6 @@ class TitlePanel ( vcrui.TitlePanel ):
       else:
         wx.MessageDialog(self, TEXT_SCHEDULE_FAILURE, "", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
     elif stop > now:
-      #wx.MessageDialog(self, "Aufzeichnen laufender Sendungen noch nicht implementiert.", "", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
       length = stop-now
       args = map(str,['screen', '-m', '-d', 'tv-record', channelName, title.encode('utf-8'), length])
       try:
@@ -211,8 +210,8 @@ class MainFrame ( vcrui.MainFrame ):
 
   def listChannels(self):
     self.m_scrolledWindow.GetSizer().Clear(True)
-    channelListPanel = vcrui.ChannelListPanel(self)
-    for line in [line.strip() for line in open('channels.conf')]:
+    channelListPanel = vcrui.ChannelListPanel(self.m_scrolledWindow)
+    for line in sorted([line.strip() for line in open('channels.conf')]): # TODO: try/catch for file-operation and possible encoding issues
       if line[0] != '#' and line[0] != ';' :
         split = line.split(':')
         self.addChannelSelectButton(split[0], split[8], channelListPanel)
@@ -224,7 +223,7 @@ class MainFrame ( vcrui.MainFrame ):
     self.m_scrolledWindow.GetSizer().Clear(True)
     self.m_scrolledWindow.GetSizer().SetOrientation(wx.HORIZONTAL)
     programs = self.readProgrammeData(None,None)
-    for line in [line.strip() for line in open('channels.conf')]:
+    for line in sorted([line.strip() for line in open('channels.conf')]):
       if line[0] != '#' and line[0] != ';' :
         split = line.split(':')
         self.addChannel(programs, split[0], split[8], forceDisplay=False, showBackButton=False)
