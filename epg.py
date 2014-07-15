@@ -16,9 +16,11 @@ EPG_TITLE_LANGUAGES = ['de','DEU']
 EPG_CACHE_FILENAME = 'programme.pkl'
 TEXT_SCHEDULE_SUCCESS = "\"%s\" wurde zur Aufnahme eingeplant."
 TEXT_SCHEDULE_FAILURE = "Ein Problem ist aufgetreten."
+TEXT_SCHEDULE_PAST = "Sendung schon vorbei."
 TEXT_EPG_UPDATING = "Bitte warten. Aktuelle Programminformationen werden geholt..."
 TEXT_EPG_NOINFO = "Keine Programminformationen verfügbar."
 TEXT_EPG_NOTITLE = 'UNKNOWN'
+TEXT_EPG_TOCHANNELOVERVIEW = "zurück zur Senderwahl"
 
 class TitlePanel ( vcrui.TitlePanel ):
   def __init__( self, parent ):
@@ -37,29 +39,35 @@ class TitlePanel ( vcrui.TitlePanel ):
     self.m_stopLabel.SetLabel(show['stop'].strftime('%H:%M'))
     
   def onSheduleRecordButtonClick( self, event ):
+    now = datetime.now()
     start = self.show['start']
     stop = self.show['stop']
-    if RECORD_BUFFER_MINUTES != 0:
-      start = start - timedelta(minutes=RECORD_BUFFER_MINUTES)
-      stop = stop + timedelta(minutes=RECORD_BUFFER_MINUTES)
-    startMinute = start.minute
-    startHour = start.hour
-    startDay = start.day
-    startMonth = start.month
-    startYear = start.day 
-    weekday = ""
-    length = str(stop-start)
-    channelName = self.channelName
-    title = self.show['title']
-    args = map(str,['tv-schedule-record',startMinute, startHour, startDay, startMonth, startYear, weekday, length, channelName, title.encode('utf-8')])
-    try:
-      returncode = subprocess.call(args)
-    except e:
-      returncode = 255
-    if returncode == 0:
-      wx.MessageDialog(self, TEXT_SCHEDULE_SUCCESS%(title), "", wx.OK | wx.ICON_INFORMATION).ShowModal()
+    if start > now:
+      if RECORD_BUFFER_MINUTES != 0:
+        start = start - timedelta(minutes=RECORD_BUFFER_MINUTES)
+        stop = stop + timedelta(minutes=RECORD_BUFFER_MINUTES)
+      startMinute = start.minute
+      startHour = start.hour
+      startDay = start.day
+      startMonth = start.month
+      startYear = start.day 
+      weekday = ""
+      length = str(stop-start)
+      channelName = self.channelName
+      title = self.show['title']
+      args = map(str,['tv-schedule-record',startMinute, startHour, startDay, startMonth, startYear, weekday, length, channelName, title.encode('utf-8')])
+      try:
+        returncode = subprocess.call(args)
+      except e:
+        returncode = 255
+      if returncode == 0:
+        wx.MessageDialog(self, TEXT_SCHEDULE_SUCCESS%(title), "", wx.OK | wx.ICON_INFORMATION).ShowModal()
+      else:
+        wx.MessageDialog(self, TEXT_SCHEDULE_FAILURE, "", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
+    elif stop > now:
+      wx.MessageDialog(self, "Aufzeichnen laufender Sendungen noch nicht implementiert.", "", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
     else:
-      wx.MessageDialog(self, TEXT_SCHEDULE_FAILURE, "", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
+      wx.MessageDialog(self, TEXT_SCHEDULE_PAST, "", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
 
 class MainFrame ( vcrui.MainFrame ):
   def __init__(self,parent):
@@ -77,38 +85,47 @@ class MainFrame ( vcrui.MainFrame ):
     wx.Yield()
     self.m_scrolledWindow.GetSizer().Clear(True)
     programs = self.readProgrammeData(channelName, channelID)
-    self.addChannel(programs, channelName, channelID, True)
+    self.addChannel(programs, channelName, channelID)
     self.Layout()
     
-  def addChannel(self, programs, channelName, channelID, forceDisplay=False ):
+  def addChannel(self, programs, channelName, channelID, forceDisplay=True, showBackButton=True ):
     channelID = "%s.dvb.guide"%channelID
     if channelID in programs or forceDisplay:
       channelPanel = vcrui.ChannelPanel(self.m_scrolledWindow)
       channelPanel.m_channelNameLabel.SetLabel(channelName)
       self.m_scrolledWindow.GetSizer().Add(channelPanel, 0, wx.ALL|wx.EXPAND)
+      if showBackButton:
+        backButton = wx.Button( channelPanel, wx.ID_ANY, TEXT_EPG_TOCHANNELOVERVIEW, wx.DefaultPosition, wx.DefaultSize, 0 )
+        channelPanel.GetSizer().Add(backButton, 0, wx.ALL)
+        backButton.Bind( wx.EVT_BUTTON, lambda event: self.listChannels() )
     if channelID not in programs:
       if forceDisplay:
         channelPanel.GetSizer().Add(wx.StaticText(channelPanel, wx.ID_ANY, TEXT_EPG_NOINFO), 0, wx.ALL|wx.EXPAND)
     else:
       now = datetime.now()
-      for show in programs[channelID]:#sorted(programs[channelID],key=lambda x:x['start']):
-        if show['start'] > now:
+      for show in programs[channelID]: #programs[channelID] should be pre-sorted
+        if show['stop'] > now:
           titlePanel = TitlePanel(channelPanel)
           titlePanel.SetShow(show)
           titlePanel.SetChannelName(channelName)
           channelPanel.GetSizer().Add(titlePanel, 0, wx.ALL|wx.EXPAND)
 
   def readProgrammeData(self, channelName, channelID):
-    
     try:
       cache = open(EPG_CACHE_FILENAME, 'rb')
       programs = pickle.load(cache)
       cache.close()
+      if channelID is None:
+        return programs
       channelID = "%s.dvb.guide"%channelID
-      if channelID in programs and programs[channelID][0]['start'] > datetime.today() - timedelta(days=1):
+      if channelID in programs \
+      and programs[channelID][0]['start'] > datetime.today() - timedelta(days=1):
         return programs
     except:
       programs = dict()
+      
+    if channelID is None:
+      return programs
       
     try:
       sub = subprocess.Popen(["tv-grab-xmltv", channelName], stdout=subprocess.PIPE)
@@ -165,11 +182,11 @@ class MainFrame ( vcrui.MainFrame ):
   def addAllChannels(self): # for debug purposes only
     self.m_scrolledWindow.GetSizer().Clear(True)
     self.m_scrolledWindow.GetSizer().SetOrientation(wx.HORIZONTAL)
-    programs = self.readProgrammeData("Tele 5")
+    programs = self.readProgrammeData(None,None)
     for line in [line.strip() for line in open('channels.conf')]:
       if line[0] != '#' and line[0] != ';' :
         split = line.split(':')
-        self.addChannel(programs, split[0], split[8])
+        self.addChannel(programs, split[0], split[8], showBackButton=False)
     self.Layout()
 
 if __name__ == "__main__":
