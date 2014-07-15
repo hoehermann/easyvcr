@@ -3,17 +3,16 @@
 
 import wx
 import vcrui
-import traceback
-#from vcrui import MainFrame, ChannelPanel, TitlePanel, ChannelListPanel
 from datetime import datetime, timedelta
 import subprocess
 import sys
+import traceback
 import xml.etree.ElementTree as ET
 import pickle
 
 RECORD_BUFFER_MINUTES = 5
 CRON_BUFFER_MINUTES = 2
-EPG_MAX_TITLE_LENGTH = 25
+EPG_MAX_TITLE_LENGTH = 35
 EPG_TITLE_LANGUAGES = ['de','DEU']
 EPG_CACHE_FILENAME = 'programme.pkl'
 EPG_CACHE_MAX_AGE_DAYS = 2
@@ -41,7 +40,7 @@ class TitlePanel ( vcrui.TitlePanel ):
     if True and len(title) > EPG_MAX_TITLE_LENGTH:
       title = title[:EPG_MAX_TITLE_LENGTH]+'...'
     self.m_titleLabel.SetLabel(title)
-    self.m_startLabel.SetLabel(show['start'].strftime('%a %H:%M'))
+    self.m_startLabel.SetLabel(show['start'].strftime('%a, %d. %b. %H:%M')) # TODO: eigenes label für tag, separator für "von... bis..."
     self.m_stopLabel.SetLabel(show['stop'].strftime('%H:%M'))
     
   def onSheduleRecordButtonClick( self, event ):
@@ -105,7 +104,8 @@ class MainFrame ( vcrui.MainFrame ):
     self.Layout()
     
   def addChannel(self, programs, channelName, channelID, forceDisplay=True, showBackButton=True ):
-    channelID = "%s.dvb.guide"%channelID
+    #debugStart = datetime.now()
+    channelID = "%s.dvb.guide"%channelID # TODO: move all instances of this conversion into separate function
     if channelID in programs or forceDisplay:
       channelPanel = vcrui.ChannelPanel(self.m_scrolledWindow)
       channelPanel.m_channelNameLabel.SetLabel(channelName)
@@ -125,22 +125,33 @@ class MainFrame ( vcrui.MainFrame ):
           titlePanel.SetShow(show)
           titlePanel.SetChannelName(channelName)
           channelPanel.GetSizer().Add(titlePanel, 0, wx.ALL|wx.EXPAND)
+    #sys.stderr.write('generation of showlist for channel took %s\n'%(str(datetime.now() - debugStart)))
 
   def readProgrammeData(self, channelName, channelID):
     try:
       cache = open(EPG_CACHE_FILENAME, 'rb')
-      programs = pickle.load(cache) # TODO: remove all shows already over
+      programs = pickle.load(cache)
+      
+      # remove shows which are already over from cache
+      now = datetime.now()
+      for channel in programs.keys():
+        shows = [show for show in programs[channel] if show['stop'] > now]
+        if not shows:
+          del programs[channel]
+        else:
+          programs[channel] = shows
+
       cache.close()
       if channelID is None:
         return programs
       channelID = "%s.dvb.guide"%channelID
       if channelID in programs \
       and programs[channelID][0]['start'] > datetime.today() - timedelta(days=EPG_CACHE_MAX_AGE_DAYS):
-        return programs
+        return programs # return cache if requested channel information is recent enough
     except:
-      programs = dict()
+      programs = dict() # cache unavailable, use empty dict
       
-    if channelID is None:
+    if channelID is None: # if no particular channel is wanted, simply return cache
       return programs
       
     try:
@@ -182,12 +193,14 @@ class MainFrame ( vcrui.MainFrame ):
           
       for channelID in programs.keys():
         programs[channelID].sort(key=lambda x:x['start'])
-          
-      cache = open(EPG_CACHE_FILENAME, 'wb')
-      pickle.dump(programs, cache)
-      cache.close()
+
     except:
       wx.MessageDialog(self, str(sys.exc_info()[0].__name__)+" "+str(sys.exc_info()[1]), "Unexpected error during parsing", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
+          
+    # TODO : surround this with try
+    cache = open(EPG_CACHE_FILENAME, 'wb')
+    pickle.dump(programs, cache)
+    cache.close()
     
     return programs
     
