@@ -3,6 +3,7 @@
 
 import wx
 import vcrui
+import traceback
 #from vcrui import MainFrame, ChannelPanel, TitlePanel, ChannelListPanel
 from datetime import datetime, timedelta
 import subprocess
@@ -11,16 +12,21 @@ import xml.etree.ElementTree as ET
 import pickle
 
 RECORD_BUFFER_MINUTES = 5
+CRON_BUFFER_MINUTES = 2
 EPG_MAX_TITLE_LENGTH = 25
 EPG_TITLE_LANGUAGES = ['de','DEU']
 EPG_CACHE_FILENAME = 'programme.pkl'
+EPG_CACHE_MAX_AGE_DAYS = 2
+TEXT_LIVERECORD_SUCCESS = "\"%s\" wird jetzt vielleicht live aufgezeichnet."
+TEXT_LIVERECORD_FAILURE = "Live Aufzeichnung konnte nicht gestartet werden."
 TEXT_SCHEDULE_SUCCESS = "\"%s\" wurde zur Aufnahme eingeplant."
-TEXT_SCHEDULE_FAILURE = "Ein Problem ist aufgetreten."
+TEXT_SCHEDULE_FAILURE = "Sendung konnte nicht zur Aufnahme eingeplant werden."
 TEXT_SCHEDULE_PAST = "Sendung schon vorbei."
 TEXT_EPG_UPDATING = "Bitte warten. Aktuelle Programminformationen werden geholt..."
 TEXT_EPG_NOINFO = "Keine Programminformationen verfügbar."
 TEXT_EPG_NOTITLE = 'UNKNOWN'
 TEXT_EPG_TOCHANNELOVERVIEW = "zurück zur Senderwahl"
+TEXT_EPG_LISTALLCHANNELS = "alle Sender"
 
 class TitlePanel ( vcrui.TitlePanel ):
   def __init__( self, parent ):
@@ -42,30 +48,40 @@ class TitlePanel ( vcrui.TitlePanel ):
     now = datetime.now()
     start = self.show['start']
     stop = self.show['stop']
-    if start > now:
-      if RECORD_BUFFER_MINUTES != 0:
-        start = start - timedelta(minutes=RECORD_BUFFER_MINUTES)
-        stop = stop + timedelta(minutes=RECORD_BUFFER_MINUTES)
+    if RECORD_BUFFER_MINUTES != 0:
+      start = start - timedelta(minutes=RECORD_BUFFER_MINUTES)
+      stop = stop + timedelta(minutes=RECORD_BUFFER_MINUTES)
+    channelName = self.channelName
+    title = self.show['title']
+    if start > now + timedelta(minutes=CRON_BUFFER_MINUTES):
       startMinute = start.minute
       startHour = start.hour
       startDay = start.day
       startMonth = start.month
       startYear = start.day 
       weekday = ""
-      length = str(stop-start)
-      channelName = self.channelName
-      title = self.show['title']
+      length = stop-start
       args = map(str,['tv-schedule-record',startMinute, startHour, startDay, startMonth, startYear, weekday, length, channelName, title.encode('utf-8')])
       try:
         returncode = subprocess.call(args)
       except e:
-        returncode = 255
+        returncode = -1
       if returncode == 0:
         wx.MessageDialog(self, TEXT_SCHEDULE_SUCCESS%(title), "", wx.OK | wx.ICON_INFORMATION).ShowModal()
       else:
         wx.MessageDialog(self, TEXT_SCHEDULE_FAILURE, "", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
     elif stop > now:
-      wx.MessageDialog(self, "Aufzeichnen laufender Sendungen noch nicht implementiert.", "", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
+      #wx.MessageDialog(self, "Aufzeichnen laufender Sendungen noch nicht implementiert.", "", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
+      length = stop-now
+      args = map(str,['screen', '-m', '-d', 'tv-record', channelName, title.encode('utf-8'), length])
+      try:
+        returncode = subprocess.call(args)
+      except e:
+        returncode = -1
+      if returncode == 0:
+        wx.MessageDialog(self, TEXT_LIVERECORD_SUCCESS%(title), "", wx.OK | wx.ICON_INFORMATION).ShowModal()
+      else:
+        wx.MessageDialog(self, TEXT_SCHEDULE_FAILURE, "", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
     else:
       wx.MessageDialog(self, TEXT_SCHEDULE_PAST, "", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
 
@@ -113,13 +129,13 @@ class MainFrame ( vcrui.MainFrame ):
   def readProgrammeData(self, channelName, channelID):
     try:
       cache = open(EPG_CACHE_FILENAME, 'rb')
-      programs = pickle.load(cache)
+      programs = pickle.load(cache) # TODO: remove all shows already over
       cache.close()
       if channelID is None:
         return programs
       channelID = "%s.dvb.guide"%channelID
       if channelID in programs \
-      and programs[channelID][0]['start'] > datetime.today() - timedelta(days=1):
+      and programs[channelID][0]['start'] > datetime.today() - timedelta(days=EPG_CACHE_MAX_AGE_DAYS):
         return programs
     except:
       programs = dict()
@@ -133,10 +149,12 @@ class MainFrame ( vcrui.MainFrame ):
       if sub.returncode != 0:
         raise RuntimeError("Abnormal script termination")
     except:
+      sys.stderr.write(traceback.format_exc())
       wx.MessageDialog(self, str(sys.exc_info()[0].__name__)+" "+str(sys.exc_info()[1]), "Unexpected error during subscript execution", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
       return programs
       
     try:
+      transponderChannels = []
       #tree = ET.parse('program.xml')
       #root = tree.getroot()
       root = ET.fromstring(xmlepgdata)
@@ -153,10 +171,14 @@ class MainFrame ( vcrui.MainFrame ):
         dtStart = datetime.strptime(programme.get('start').split(' ')[0], '%Y%m%d%H%M%S')
         dtStop = datetime.strptime(programme.get('stop').split(' ')[0], '%Y%m%d%H%M%S')
         show = {'start':dtStart, 'stop':dtStop, 'title':sTitle}
-        if sChannel not in programs:
-          programs[sChannel] = [show]
+        if sChannel not in transponderChannels:
+          transponderChannels.append(sChannel)
+          programs[sChannel] = [show] # purge cached, probabaly old information by overwriting
         else:
-          programs[sChannel].append(show)
+          if sChannel not in programs:
+            programs[sChannel] = [show]
+          else:
+            programs[sChannel].append(show)
           
       for channelID in programs.keys():
         programs[channelID].sort(key=lambda x:x['start'])
@@ -168,6 +190,11 @@ class MainFrame ( vcrui.MainFrame ):
       wx.MessageDialog(self, str(sys.exc_info()[0].__name__)+" "+str(sys.exc_info()[1]), "Unexpected error during parsing", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
     
     return programs
+    
+  def addListAllChannelsButton(self, parent):
+    button = wx.Button( parent, wx.ID_ANY, TEXT_EPG_LISTALLCHANNELS, wx.DefaultPosition, wx.DefaultSize, 0 )
+    parent.GetSizer().Add( button, 0, wx.ALL|wx.EXPAND, 5 )
+    button.Bind( wx.EVT_BUTTON, lambda event: self.addAllChannels() )
 
   def listChannels(self):
     self.m_scrolledWindow.GetSizer().Clear(True)
@@ -176,17 +203,18 @@ class MainFrame ( vcrui.MainFrame ):
       if line[0] != '#' and line[0] != ';' :
         split = line.split(':')
         self.addChannelSelectButton(split[0], split[8], channelListPanel)
+    self.addListAllChannelsButton(channelListPanel)
     self.m_scrolledWindow.GetSizer().Add(channelListPanel, 0, wx.ALL|wx.EXPAND)
     self.Layout()
         
-  def addAllChannels(self): # for debug purposes only
+  def addAllChannels(self):
     self.m_scrolledWindow.GetSizer().Clear(True)
     self.m_scrolledWindow.GetSizer().SetOrientation(wx.HORIZONTAL)
     programs = self.readProgrammeData(None,None)
     for line in [line.strip() for line in open('channels.conf')]:
       if line[0] != '#' and line[0] != ';' :
         split = line.split(':')
-        self.addChannel(programs, split[0], split[8], showBackButton=False)
+        self.addChannel(programs, split[0], split[8], forceDisplay=False, showBackButton=False)
     self.Layout()
 
 if __name__ == "__main__":
@@ -194,6 +222,5 @@ if __name__ == "__main__":
   frame = MainFrame(None)
   frame.Maximize(True)
   frame.listChannels()
-  #frame.addAllChannels()
   frame.Show()
   app.MainLoop()
