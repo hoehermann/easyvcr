@@ -24,7 +24,7 @@ TEXT_SCHEDULE_PAST = "Sendung schon vorbei."
 TEXT_EPG_UPDATING = "Bitte warten. Aktuelle Programminformationen werden geholt..."
 TEXT_EPG_NOINFO = "Keine Programminformationen verfügbar."
 TEXT_EPG_NOTITLE = 'UNKNOWN'
-TEXT_EPG_TOCHANNELOVERVIEW = "zurück zur Senderwahl"
+TEXT_EPG_TOCHANNELOVERVIEW = "zur Senderwahl"
 TEXT_EPG_LISTALLCHANNELS = "alle Sender"
 
 class TitlePanel ( vcrui.TitlePanel ):
@@ -86,6 +86,10 @@ class TitlePanel ( vcrui.TitlePanel ):
 class MainFrame ( vcrui.MainFrame ):
   def __init__(self,parent):
     vcrui.MainFrame.__init__(self,parent)
+    backButton = wx.Button( self.m_headline, wx.ID_ANY, TEXT_EPG_TOCHANNELOVERVIEW, wx.DefaultPosition, wx.DefaultSize, 0 )
+    self.m_headline.GetSizer().Add(backButton, 0, wx.ALL)
+    backButton.Bind( wx.EVT_BUTTON, lambda event: self.listChannels() )
+    self.Layout()
     
   def addChannelSelectButton(self, channelName, channelID, parent):
     button = wx.Button( parent, wx.ID_ANY, channelName, wx.DefaultPosition, wx.DefaultSize, 0 )
@@ -102,17 +106,13 @@ class MainFrame ( vcrui.MainFrame ):
     self.addChannel(programs, channelName, channelID)
     self.Layout()
     
-  def addChannel(self, programs, channelName, channelID, forceDisplay=True, showBackButton=True ):
+  def addChannel(self, programs, channelName, channelID, forceDisplay=True):
     #debugStart = datetime.now()
     channelID = "%s.dvb.guide"%channelID # TODO: move all instances of this conversion into separate function
     if channelID in programs or forceDisplay:
       channelPanel = vcrui.ChannelPanel(self.m_scrolledWindow)
       channelPanel.m_channelNameLabel.SetLabel(channelName)
       self.m_scrolledWindow.GetSizer().Add(channelPanel, 0, wx.ALL|wx.EXPAND)
-      if showBackButton:
-        backButton = wx.Button( channelPanel, wx.ID_ANY, TEXT_EPG_TOCHANNELOVERVIEW, wx.DefaultPosition, wx.DefaultSize, 0 )
-        channelPanel.GetSizer().Add(backButton, 0, wx.ALL)
-        backButton.Bind( wx.EVT_BUTTON, lambda event: self.listChannels() )
     if channelID not in programs:
       if forceDisplay:
         channelPanel.GetSizer().Add(wx.StaticText(channelPanel, wx.ID_ANY, TEXT_EPG_NOINFO), 0, wx.ALL|wx.EXPAND)

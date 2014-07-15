@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*- 
 
 ###########################################################################
-## Python code generated with wxFormBuilder (version Jan 14 2014)
+## Python code generated with wxFormBuilder (version Jun  6 2014)
 ## http://www.wxformbuilder.org/
 ##
 ## PLEASE DO "NOT" EDIT THIS FILE!
@@ -22,6 +22,15 @@ class MainFrame ( wx.Frame ):
 		self.SetSizeHintsSz( wx.DefaultSize, wx.DefaultSize )
 		
 		bSizer5 = wx.BoxSizer( wx.VERTICAL )
+		
+		self.m_headline = wx.Panel( self, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, wx.TAB_TRAVERSAL )
+		bSizer61 = wx.BoxSizer( wx.HORIZONTAL )
+		
+		
+		self.m_headline.SetSizer( bSizer61 )
+		self.m_headline.Layout()
+		bSizer61.Fit( self.m_headline )
+		bSizer5.Add( self.m_headline, 0, wx.EXPAND |wx.ALL, 5 )
 		
 		self.m_scrolledWindow = wx.ScrolledWindow( self, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, wx.HSCROLL|wx.VSCROLL )
 		self.m_scrolledWindow.SetScrollRate( 5, 5 )
