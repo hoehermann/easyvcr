@@ -5,6 +5,7 @@ import wx
 import vcrui
 from datetime import datetime, timedelta
 import subprocess
+import threading
 import sys
 import traceback
 import xml.etree.ElementTree as ET
@@ -26,6 +27,15 @@ TEXT_EPG_NOINFO = "Keine Programminformationen verfügbar."
 TEXT_EPG_NOTITLE = 'UNKNOWN'
 TEXT_EPG_TOCHANNELOVERVIEW = "zur Senderwahl"
 TEXT_EPG_LISTALLCHANNELS = "alle Sender"
+
+
+EPGDataEventType = wx.NewEventType()
+EPG_DATA_EVENT = wx.PyEventBinder(EPGDataEventType, 1)
+class EPGDataEvent(wx.PyCommandEvent):
+    def __init__(self, etype, eid, status=None, data=None):
+        wx.PyCommandEvent.__init__(self, etype, eid)
+        self.status = status
+        self.data = data
 
 class TitlePanel ( vcrui.TitlePanel ):
   def __init__( self, parent ):
@@ -89,6 +99,7 @@ class MainFrame ( vcrui.MainFrame ):
     backButton = wx.Button( self.m_headline, wx.ID_ANY, TEXT_EPG_TOCHANNELOVERVIEW, wx.DefaultPosition, wx.DefaultSize, 0 )
     self.m_headline.GetSizer().Add(backButton, 0, wx.ALL)
     backButton.Bind( wx.EVT_BUTTON, lambda event: self.listChannels() )
+    self.Bind(EPG_DATA_EVENT, self.onEPGData)
     self.Layout()
     
   def addChannelSelectButton(self, channelName, channelID, parent):
@@ -102,8 +113,18 @@ class MainFrame ( vcrui.MainFrame ):
     self.Layout()
     wx.Yield()
     self.m_scrolledWindow.GetSizer().Clear(True)
-    programs = self.readProgrammeData(channelName, channelID)
-    self.addChannel(programs, channelName, channelID)
+    self._selectedChannelName = channelName
+    self._selectedChannelID = channelID
+    self.readProgrammeData(channelName, channelID)
+  
+  def onEPGData(self, evt):
+    print evt.status
+    if evt.data:
+      self.parseProgrammeData(evt.data)
+  
+  def onProgrammeDataReady(self, programs):
+    print "onProgrammeDataReady"
+    self.addChannel(programs, self._selectedChannelName, self._selectedChannelID)
     self.Layout()
     
   def addChannel(self, programs, channelName, channelID, forceDisplay=True):
@@ -126,11 +147,10 @@ class MainFrame ( vcrui.MainFrame ):
           channelPanel.GetSizer().Add(titlePanel, 0, wx.ALL|wx.EXPAND)
     #sys.stderr.write('generation of showlist for channel took %s\n'%(str(datetime.now() - debugStart)))
 
-  def readProgrammeData(self, channelName, channelID):
+  def loadProgrammeDataFromCache(self):
     try:
       cache = open(EPG_CACHE_FILENAME, 'rb')
       programs = pickle.load(cache)
-      
       # remove shows which are already over from cache
       now = datetime.now()
       for channel in programs.keys():
@@ -139,30 +159,55 @@ class MainFrame ( vcrui.MainFrame ):
           del programs[channel]
         else:
           programs[channel] = shows
-
       cache.close()
-      if channelID is None:
-        return programs
-      channelID = "%s.dvb.guide"%channelID
-      if channelID in programs \
-      and programs[channelID][0]['start'] > datetime.today() - timedelta(days=EPG_CACHE_MAX_AGE_DAYS):
-        return programs # return cache if requested channel information is recent enough
     except:
       programs = dict() # cache unavailable, use empty dict
-      
-    if channelID is None: # if no particular channel is wanted, simply return cache
-      return programs
+    return programs
+    
+  def readProgrammeData(self, channelName, channelID): # TODO: diese funktionen von GUI trennen
+    programs = self.loadProgrammeDataFromCache()
+    channelID = "%s.dvb.guide"%channelID
+    if channelID in programs \
+    and programs[channelID][0]['start'] > datetime.today() - timedelta(days=EPG_CACHE_MAX_AGE_DAYS):
+      self.onProgrammeDataReady(programs) # use cache if requested channel information is recent enough
+      return
       
     try:
-      sub = subprocess.Popen(["tv-grab-xmltv", channelName], stdout=subprocess.PIPE)
-      xmlepgdata = sub.communicate()[0]
-      if sub.returncode != 0:
-        raise RuntimeError("Abnormal script termination")
+      sub = subprocess.Popen(["tv-grab-xmltv", channelName], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+      def readProgrammeDataStatus():
+        statusstring = ""
+        while sub.poll() is None:
+          statusbytes = sub.stderr.read(64)
+          if statusbytes:
+            statusstring += statusbytes
+            statuses = statusstring.split(':')
+            if len(statuses) > 2:
+              statusstring = ""
+              status = statuses[1]
+              info = status.split(',')
+              packetsstring = info[0].strip()
+              packets = int(packetsstring.split(' ')[0])
+              evt = EPGDataEvent(EPGDataEventType, -1, status=packets)
+              wx.PostEvent(self, evt)
+      def readProgrammeDataXML():
+        xmlepgdata = sub.stdout.read()
+        sub.wait()
+        if sub.returncode != 0:
+          raise RuntimeError("Abnormal script termination")
+        evt = EPGDataEvent(EPGDataEventType, -1, data=xmlepgdata)
+        wx.PostEvent(self, evt)
+          
+      backgroundStatusReader = threading.Thread(target=readProgrammeDataStatus)
+      backgroundStatusReader.start() # falls sub zu schnell lösläuft, kann es hier einen deadlock mit race-condidion geben
+      backgroundDataReader = threading.Thread(target=readProgrammeDataXML)
+      backgroundDataReader.start()
+      
     except:
       sys.stderr.write(traceback.format_exc())
       wx.MessageDialog(self, str(sys.exc_info()[0].__name__)+" "+str(sys.exc_info()[1]), "Unexpected error during subscript execution", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
-      return programs
       
+  def parseProgrammeData(self, xmlepgdata):
+    programs = self.loadProgrammeDataFromCache()
     try:
       transponderChannels = []
       #tree = ET.parse('program.xml')
@@ -201,7 +246,8 @@ class MainFrame ( vcrui.MainFrame ):
     pickle.dump(programs, cache)
     cache.close()
     
-    return programs
+    self.onProgrammeDataReady(programs)
+
     
   def addListAllChannelsButton(self, parent):
     button = wx.Button( parent, wx.ID_ANY, TEXT_EPG_LISTALLCHANNELS, wx.DefaultPosition, wx.DefaultSize, 0 )
@@ -222,7 +268,7 @@ class MainFrame ( vcrui.MainFrame ):
   def addAllChannels(self):
     self.m_scrolledWindow.GetSizer().Clear(True)
     self.m_scrolledWindow.GetSizer().SetOrientation(wx.HORIZONTAL)
-    programs = self.readProgrammeData(None,None)
+    programs = self.readProgrammeData(None,None) # TODO: this is now defunct
     for line in sorted([line.strip() for line in open('channels.conf')]):
       if line[0] != '#' and line[0] != ';' :
         split = line.split(':')
