@@ -3,7 +3,7 @@
 
 import wx
 import momsui
-from momsui import MainFrame, ChannelPanel, TitlePanel
+from momsui import MainFrame, ChannelPanel, TitlePanel, ChannelListPanel
 from datetime import datetime, timedelta
 import subprocess
 import sys
@@ -58,16 +58,16 @@ class TitlePanel ( momsui.TitlePanel ):
     if returncode == 0:
       wx.MessageDialog(self, TEXT_SCHEDULE_SUCCESS%(title), "", wx.OK | wx.ICON_INFORMATION).ShowModal()
     else:
-      wx.MessageDialog(self, TEXT_SCHEDULE_FAILURE, "", wx.OK | wx.ICON_ALERT).ShowModal()
+      wx.MessageDialog(self, TEXT_SCHEDULE_FAILURE, "", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
 
 class MainFrame ( momsui.MainFrame ):
   def __init__(self,parent):
     momsui.MainFrame.__init__(self,parent)
     
-  def addChannelSelectButton(self, channelName, channelID):
-    self.m_channelSelectButton = wx.Button( self.m_scrolledWindow, wx.ID_ANY, channelName, wx.DefaultPosition, wx.DefaultSize, 0 )
-    self.m_scrolledWindow.GetSizer().Add( self.m_channelSelectButton, 0, wx.ALL|wx.EXPAND, 5 )
-    self.m_channelSelectButton.Bind( wx.EVT_BUTTON, lambda event: self.onChannelSelectButtonClick(channelName, channelID ) )
+  def addChannelSelectButton(self, channelName, channelID, parent):
+    button = wx.Button( parent, wx.ID_ANY, channelName, wx.DefaultPosition, wx.DefaultSize, 0 )
+    parent.GetSizer().Add( button, 0, wx.ALL|wx.EXPAND, 5 )
+    button.Bind( wx.EVT_BUTTON, lambda event: self.onChannelSelectButtonClick(channelName, channelID ) )
     
   def onChannelSelectButtonClick( self, channelName, channelID ):
     self.m_scrolledWindow.GetSizer().Clear(True)
@@ -76,7 +76,7 @@ class MainFrame ( momsui.MainFrame ):
     wx.Yield()
     self.m_scrolledWindow.GetSizer().Clear(True)
     programs = self.readProgrammeData(channelName)
-    self.addChannel(programs, channelName, channelID)
+    self.addChannel(programs, channelName, channelID, True)
     self.Layout()
     
   def addChannel(self, programs, channelName, channelID, forceDisplay=False ):
@@ -84,7 +84,7 @@ class MainFrame ( momsui.MainFrame ):
     if channelID in programs or forceDisplay:
       channelPanel = ChannelPanel(self.m_scrolledWindow)
       channelPanel.m_channelNameLabel.SetLabel(channelName)
-      self.m_scrolledWindow.GetSizer().Add(channelPanel)
+      self.m_scrolledWindow.GetSizer().Add(channelPanel, 0, wx.ALL|wx.EXPAND)
     if channelID not in programs:
       if forceDisplay:
         channelPanel.GetSizer().Add(wx.StaticText(channelPanel, wx.ID_ANY, TEXT_EPG_NOINFO), 0, wx.ALL|wx.EXPAND)
@@ -124,10 +124,14 @@ class MainFrame ( momsui.MainFrame ):
     return programs
 
   def listChannels(self):
+    self.m_scrolledWindow.GetSizer().Clear(True)
+    channelListPanel = ChannelListPanel(self)
     for line in [line.strip() for line in open('channels.conf')]:
       if line[0] != '#' and line[0] != ';' :
         split = line.split(':')
-        frame.addChannelSelectButton(split[0], split[8])
+        self.addChannelSelectButton(split[0], split[8], channelListPanel)
+    self.m_scrolledWindow.GetSizer().Add(channelListPanel, 0, wx.ALL|wx.EXPAND)
+    self.Layout()
         
   def addAllChannels(self): # for debug purposes only
     self.m_scrolledWindow.GetSizer().Clear(True)
