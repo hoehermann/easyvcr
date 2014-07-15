@@ -1,0 +1,18 @@
+#!/bin/bash
+
+CHANNEL_NAME=$1
+
+# try to tune
+if true #czap "${CHANNEL_NAME}" 2>/dev/null | head -n 10 | tail -n 1 | grep -q 'FE_HAS_LOCK'
+then
+  # actually tune
+  czap -r "${CHANNEL_NAME}" > /dev/null &
+  # prepare to kill tuner
+  CZAP_PID=$!
+  trap "kill ${CZAP_PID}" SIGINT SIGTERM EXIT # produces error if czap dead (e.g. due to device busy)
+  # grap epg data from stream
+  tv_grab_dvb -e utf-8
+else
+  echo "Tuning failed"
+  exit 1
+fi

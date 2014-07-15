@@ -1,0 +1,25 @@
+#!/bin/bash
+
+startMinute=$1
+startHour=$2
+startDay=$3
+startMonth=$4
+startYear=$5
+weekday=$6
+length=$7
+channelName=$8
+title=$9 # lets just hope this is always a sane filename
+
+if [ -z "${weekday}" ]
+then
+  line="${startMinute} ${startHour} ${startDay} ${startMonth} * /usr/local/bin/tv-record-scheduled \"${channelName}\" \"${title}\" \"${length}\""
+  #echo "${line}"
+  hash=`echo -n "${line}" | md5sum`
+  line="${line} ${hash%% *}"
+  #echo -n "New crontab line: "
+  #echo "${line}"
+  (crontab -l ; echo "${line}") | crontab -
+else
+  echo "Recurring record schedule not implemented."
+  exit 1
+fi

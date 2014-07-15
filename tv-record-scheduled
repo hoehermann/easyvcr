@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# This script executes a scheduled one-off recording and removes itself from the schedule
+
+CHANNEL_NAME=$1
+RECORD_PREFIX=$2
+RECORD_LENGTH=$3
+HASH=$4
+
+/usr/local/bin/tv-record "${CHANNEL_NAME}" "${RECORD_PREFIX}" "${RECORD_LENGTH}"
+
+if [ "${HASH}" ]
+then
+  crontab -l | grep -v "${HASH}" | crontab -
+fi

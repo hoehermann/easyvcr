@@ -1,0 +1,27 @@
+#!/bin/bash
+
+# This script records live TV
+# Note: RECORD_LENGTH defines the length of the captured video. If the input stream is damaged and frames are lost, they do not count towards the captured video length.
+
+RECORD_DIR=/media/disk/Fernsehen
+CHANNEL_NAME=$1
+RECORD_PREFIX=$2
+RECORD_LENGTH=$3
+TIMESTAMP=`date +%s`
+
+cd ${RECORD_DIR}
+# try to tune
+if czap -H "${CHANNEL_NAME}" 2>/dev/null | head -n 5 | grep -q 'status 1f'
+then
+  # actually tune
+  czap -r "${CHANNEL_NAME}" > /dev/null &
+  CZAP_PID=$!
+  # record and remux stream
+  # mention -f mpegts before -i to define input stream format
+  avconv -i /dev/dvb/adapter0/dvr0 -c:a copy -c:v copy -t ${RECORD_LENGTH} -f mpegts "${CHANNEL_NAME} - ${RECORD_PREFIX} - ${TIMESTAMP}.ts" 2>"record_${TIMESTAMP}.log"
+  # kill tuner
+  kill ${CZAP_PID}
+else
+  echo "Tuning failed"
+  exit 1
+fi
