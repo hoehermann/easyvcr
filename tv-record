@@ -11,7 +11,7 @@ TIMESTAMP=`date +%s`
 
 cd ${RECORD_DIR}
 # try to tune
-if czap -H "${CHANNEL_NAME}" 2>/dev/null | head -n 5 | grep -q 'status 1f'
+if czap -H "${CHANNEL_NAME}" 2>/dev/null | head -n 10 | grep -q 'status 1f'
 then
   # actually tune
   czap -r "${CHANNEL_NAME}" > /dev/null &

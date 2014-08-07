@@ -157,7 +157,7 @@ class MainFrame ( vcrui.MainFrame ):
     try:
       cache = open(EPG_CACHE_FILENAME, 'rb')
       programs = pickle.load(cache)
-      # remove shows which are already over from cache
+      # remove shows of the past from cache
       now = datetime.now()
       for channel in programs.keys():
         shows = [show for show in programs[channel] if show['stop'] > now]
@@ -176,11 +176,11 @@ class MainFrame ( vcrui.MainFrame ):
       return programs # circumvents event based progress
       
     channelID = "%s.dvb.guide"%channelID
-    if channelID in programs \
-    and programs[channelID][0]['start'] > datetime.today() - timedelta(days=EPG_CACHE_MAX_AGE_DAYS):
+    if False and channelID in programs \
+    and programs[channelID][0]['start'] > datetime.today() - timedelta(days=EPG_CACHE_MAX_AGE_DAYS): # TODO: this does not work with old entry purging done in loadProgrammeDataFromCache
       self.onProgrammeDataReady(programs) # use cache if requested channel information is recent enough
       return
-      
+    
     try:
       sub = subprocess.Popen(["tv-grab-xmltv", channelName], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
       def readProgrammeDataStatus():

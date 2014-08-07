@@ -10,6 +10,7 @@ then
   # prepare to kill tuner
   CZAP_PID=$!
   trap "kill ${CZAP_PID}" SIGINT SIGTERM EXIT # produces error if czap dead (e.g. due to device busy)
+  sleep 2 # give time to tune
   # grap epg data from stream
   tv_grab_dvb -e utf-8
 else
