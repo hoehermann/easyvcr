@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import wx
+#from wx.lib.stattext import GenStaticText as StaticText 
 import vcrui
 from datetime import datetime, timedelta
 import subprocess
@@ -16,7 +17,7 @@ CRON_BUFFER_MINUTES = 2
 EPG_MAX_TITLE_LENGTH = 35
 EPG_TITLE_LANGUAGES = ['de','DEU']
 EPG_CACHE_FILENAME = 'programme.pkl'
-EPG_CACHE_MAX_AGE_DAYS = 2
+EPG_DAYS_WANTED = 5
 TEXT_LIVERECORD_SUCCESS = "\"%s\" wird jetzt vielleicht live aufgezeichnet."
 TEXT_LIVERECORD_FAILURE = "Live Aufzeichnung konnte nicht gestartet werden."
 TEXT_SCHEDULE_SUCCESS = "\"%s\" wurde zur Aufnahme eingeplant."
@@ -50,6 +51,8 @@ class TitlePanel ( vcrui.TitlePanel ):
     if EPG_MAX_TITLE_LENGTH > 0 and len(title) > EPG_MAX_TITLE_LENGTH:
       title = title[:EPG_MAX_TITLE_LENGTH]+'...'
     self.m_titleLabel.SetLabel(title.replace('&', '&&'))
+    #self.m_titleLabel = StaticText(self, wx.ID_ANY, title.replace('&', '&&')) 
+    self.m_titleLabel.SetToolTip(wx.ToolTip(show['title'])) 
     self.m_startLabel.SetLabel(show['start'].strftime('%a, %d. %b. %H:%M')) # TODO: eigenes label für tag, separator für "von... bis..."
     self.m_stopLabel.SetLabel(show['stop'].strftime('%H:%M'))
     
@@ -105,9 +108,9 @@ class MainFrame ( vcrui.MainFrame ):
   def addChannelSelectButton(self, channelName, channelID, parent):
     button = wx.Button( parent, wx.ID_ANY, channelName, wx.DefaultPosition, wx.DefaultSize, 0 )
     parent.GetSizer().Add( button, 0, wx.ALL|wx.EXPAND, 5 )
-    button.Bind( wx.EVT_BUTTON, lambda event: self.onChannelSelectButtonClick(channelName, channelID ) )
+    button.Bind( wx.EVT_BUTTON, lambda event: self.onChannelSelectButtonClick(channelName, channelID, event ) )
     
-  def onChannelSelectButtonClick( self, channelName, channelID ):
+  def onChannelSelectButtonClick( self, channelName, channelID, event ):
     self.m_scrolledWindow.GetSizer().Clear(True)
     self.m_scrolledWindow.GetSizer().Add(wx.StaticText(self.m_scrolledWindow, wx.ID_ANY, TEXT_EPG_UPDATING), 0, wx.ALL|wx.EXPAND)
     
@@ -177,7 +180,7 @@ class MainFrame ( vcrui.MainFrame ):
       
     channelID = "%s.dvb.guide"%channelID
     if False and channelID in programs \
-    and programs[channelID][0]['start'] > datetime.today() - timedelta(days=EPG_CACHE_MAX_AGE_DAYS): # TODO: this does not work with old entry purging done in loadProgrammeDataFromCache
+    and programs[channelID][-1]['start'] > datetime.today() + timedelta(days=EPG_DAYS_WANTED):
       self.onProgrammeDataReady(programs) # use cache if requested channel information is recent enough
       return
     
@@ -237,14 +240,18 @@ class MainFrame ( vcrui.MainFrame ):
         show = {'start':dtStart, 'stop':dtStop, 'title':sTitle}
         if sChannel not in transponderChannels:
           transponderChannels.append(sChannel)
-          programs[sChannel] = [show] # purge cached, probabaly old information by overwriting
+          #programs[sChannel] = [show] # purge cached, probabaly old information by overwriting
+          # now keeps all information as sometimes multiple runs are neccessary? TODO: investigate source of error (maybe the stream does not always contain all information)
+        #else:
+        if sChannel not in programs:
+          programs[sChannel] = [show]
         else:
-          if sChannel not in programs:
-            programs[sChannel] = [show]
-          else:
-            programs[sChannel].append(show)
+          programs[sChannel].append(show)
           
       for channelID in programs.keys():
+        # thanks, http://stackoverflow.com/questions/10024646/how-to-get-unique-list-using-a-key-word-python
+        seen = set() 
+        programs[channelID] = [seen.add(obj['start']) or obj for obj in reversed(programs[channelID]) if obj['start'] not in seen] # make unique by start
         programs[channelID].sort(key=lambda x:x['start'])
 
     except:
@@ -281,7 +288,7 @@ class MainFrame ( vcrui.MainFrame ):
     for line in sorted([line.strip() for line in open('channels.conf')]):
       if line[0] != '#' and line[0] != ';' :
         split = line.split(':')
-        self.addChannel(programs, split[0], split[8], forceDisplay=False, showBackButton=False)
+        self.addChannel(programs, split[0], split[8], forceDisplay=False)
     self.Layout()
 
 if __name__ == "__main__":
