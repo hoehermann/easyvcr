@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 import wx
-#from wx.lib.stattext import GenStaticText as StaticText 
 import vcrui
 from datetime import datetime, timedelta
 import subprocess
@@ -17,7 +16,7 @@ CRON_BUFFER_MINUTES = 2
 EPG_MAX_TITLE_LENGTH = 35
 EPG_TITLE_LANGUAGES = ['de','DEU']
 EPG_CACHE_FILENAME = 'programme.pkl'
-EPG_DAYS_WANTED = 5
+EPG_DAYS_WANTED = 4
 TEXT_LIVERECORD_SUCCESS = "\"%s\" wird jetzt vielleicht live aufgezeichnet."
 TEXT_LIVERECORD_FAILURE = "Live Aufzeichnung konnte nicht gestartet werden."
 TEXT_SCHEDULE_SUCCESS = "\"%s\" wurde zur Aufnahme eingeplant."
@@ -25,7 +24,7 @@ TEXT_SCHEDULE_FAILURE = "Sendung konnte nicht zur Aufnahme eingeplant werden."
 TEXT_SCHEDULE_PAST = "Sendung schon vorbei."
 TEXT_EPG_UPDATING = "Bitte warten. Aktuelle Programminformationen werden geholt..."
 TEXT_EPG_NOINFO = "Keine Programminformationen verfügbar."
-TEXT_EPG_NOTITLE = 'UNKNOWN'
+TEXT_EPG_NOTITLE = 'Unbekannt'
 TEXT_EPG_TOCHANNELOVERVIEW = "zur Senderwahl"
 TEXT_EPG_LISTALLCHANNELS = "alle Sender"
 
@@ -33,10 +32,11 @@ TEXT_EPG_LISTALLCHANNELS = "alle Sender"
 EPGDataEventType = wx.NewEventType()
 EPG_DATA_EVENT = wx.PyEventBinder(EPGDataEventType, 1)
 class EPGDataEvent(wx.PyCommandEvent):
-    def __init__(self, etype, eid, status=None, data=None):
+    def __init__(self, etype, eid, status=None, data=None, message=None):
         wx.PyCommandEvent.__init__(self, etype, eid)
         self.status = status
         self.data = data
+        self.message = message
 
 class TitlePanel ( vcrui.TitlePanel ):
   def __init__( self, parent ):
@@ -51,7 +51,6 @@ class TitlePanel ( vcrui.TitlePanel ):
     if EPG_MAX_TITLE_LENGTH > 0 and len(title) > EPG_MAX_TITLE_LENGTH:
       title = title[:EPG_MAX_TITLE_LENGTH]+'...'
     self.m_titleLabel.SetLabel(title.replace('&', '&&'))
-    #self.m_titleLabel = StaticText(self, wx.ID_ANY, title.replace('&', '&&')) 
     self.m_titleLabel.SetToolTip(wx.ToolTip(show['title'])) 
     self.m_startLabel.SetLabel(show['start'].strftime('%a, %d. %b. %H:%M')) # TODO: eigenes label für tag, separator für "von... bis..."
     self.m_stopLabel.SetLabel(show['stop'].strftime('%H:%M'))
@@ -112,7 +111,9 @@ class MainFrame ( vcrui.MainFrame ):
     
   def onChannelSelectButtonClick( self, channelName, channelID, event ):
     self.m_scrolledWindow.GetSizer().Clear(True)
-    self.m_scrolledWindow.GetSizer().Add(wx.StaticText(self.m_scrolledWindow, wx.ID_ANY, TEXT_EPG_UPDATING), 0, wx.ALL|wx.EXPAND)
+    
+    self.m_statusText = wx.StaticText(self.m_scrolledWindow, wx.ID_ANY, TEXT_EPG_UPDATING)
+    self.m_scrolledWindow.GetSizer().Add(self.m_statusText, 0, wx.ALL|wx.EXPAND)
     
     self.m_gauge = wx.Gauge( self.m_scrolledWindow, wx.ID_ANY, 1000, wx.DefaultPosition, wx.DefaultSize, wx.GA_HORIZONTAL )
     self.m_gauge.SetValue( 0 ) 
@@ -124,12 +125,17 @@ class MainFrame ( vcrui.MainFrame ):
     self._selectedChannelName = channelName 
     self._selectedChannelID = channelID
     self.readProgrammeData(channelName, channelID)
+    # TODO: properly exit this mode upon user abort (currently, subprocess is not killed)
   
   def onEPGData(self, evt):
     if evt.status:
       self.m_gauge.SetValue(int(1000.0/(1.0+2**(-float(evt.status)/300.0+5.0))) ) # fake status progress
     if evt.data:
       self.parseProgrammeData(evt.data)
+    if evt.message:
+      if self.m_statusText:
+        self.m_statusText.SetLabel(evt.message)
+        self.m_scrolledWindow.GetSizer().Layout()
   
   def onProgrammeDataReady(self, programs):
     self.m_scrolledWindow.GetSizer().Clear(True)
@@ -137,7 +143,7 @@ class MainFrame ( vcrui.MainFrame ):
     self.Layout()
     
   def addChannel(self, programs, channelName, channelID, forceDisplay=True):
-    #debugStart = datetime.now()
+    debugStart = datetime.now()
     channelID = "%s.dvb.guide"%channelID # TODO: move all instances of this conversion into separate function
     if channelID in programs or forceDisplay:
       channelPanel = vcrui.ChannelPanel(self.m_scrolledWindow)
@@ -147,14 +153,21 @@ class MainFrame ( vcrui.MainFrame ):
       if forceDisplay:
         channelPanel.GetSizer().Add(wx.StaticText(channelPanel, wx.ID_ANY, TEXT_EPG_NOINFO), 0, wx.ALL|wx.EXPAND)
     else:
+      previousShow = None
       now = datetime.now()
+      def addShow(show):
+        titlePanel = TitlePanel(channelPanel)
+        titlePanel.SetShow(show)
+        titlePanel.SetChannelName(channelName)
+        channelPanel.GetSizer().Add(titlePanel, 0, wx.ALL|wx.EXPAND)
       for show in programs[channelID]: #programs[channelID] should be pre-sorted
         if show['stop'] > now:
-          titlePanel = TitlePanel(channelPanel)
-          titlePanel.SetShow(show)
-          titlePanel.SetChannelName(channelName)
-          channelPanel.GetSizer().Add(titlePanel, 0, wx.ALL|wx.EXPAND)
-    #sys.stderr.write('generation of showlist for channel took %s\n'%(str(datetime.now() - debugStart)))
+          if previousShow and not previousShow['stop'] == show['start']:
+            dummyShow = {'start':previousShow['stop'], 'stop':show['start'], 'title':TEXT_EPG_NOTITLE}
+            addShow(dummyShow)
+          previousShow = show
+          addShow(show)
+    sys.stderr.write('generation of showlist for channel took %s\n'%(str(datetime.now() - debugStart)))
 
   def loadProgrammeDataFromCache(self):
     try:
@@ -176,13 +189,16 @@ class MainFrame ( vcrui.MainFrame ):
   def readProgrammeData(self, channelName, channelID): # TODO: diese funktionen von GUI trennen
     programs = self.loadProgrammeDataFromCache()
     if not channelID: # a channelID of None means "list all from cache"
-      return programs # circumvents event based progress
+      return programs # note: circumvents event based progress
       
     channelID = "%s.dvb.guide"%channelID
-    if False and channelID in programs \
+    # holding shift can be used to force reloading
+    if not wx.GetKeyState(wx.WXK_SHIFT) \
+    and channelID in programs \
     and programs[channelID][-1]['start'] > datetime.today() + timedelta(days=EPG_DAYS_WANTED):
       self.onProgrammeDataReady(programs) # use cache if requested channel information is recent enough
       return
+    #print "need update:", programs[channelID][-1]['start'], "older than", datetime.today() + timedelta(days=EPG_DAYS_WANTED)
     
     try:
       sub = subprocess.Popen(["tv-grab-xmltv", channelName], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -193,14 +209,19 @@ class MainFrame ( vcrui.MainFrame ):
           if statusbytes:
             statusstring += statusbytes
             statuses = statusstring.split(':')
-            if len(statuses) > 2:
+            if statusstring.startswith("ERROR:") and "\n" in statusstring:
+              evt = EPGDataEvent(EPGDataEventType, -1, message=statusstring.split("\n")[0])
+              wx.PostEvent(self, evt)
+              break
+            elif len(statuses) > 2:
               statusstring = ""
               status = statuses[1]
               info = status.split(',')
-              packetsstring = info[0].strip()
-              packets = int(packetsstring.split(' ')[0])
-              evt = EPGDataEvent(EPGDataEventType, -1, status=packets)
-              wx.PostEvent(self, evt)
+              if len(info) == 5:
+                packetsstring = info[0].strip()
+                packets = int(packetsstring.split(' ')[0])
+                evt = EPGDataEvent(EPGDataEventType, -1, status=packets)
+                wx.PostEvent(self, evt)
       def readProgrammeDataXML():
         xmlepgdata = sub.stdout.read()
         sub.wait()
@@ -210,7 +231,7 @@ class MainFrame ( vcrui.MainFrame ):
         wx.PostEvent(self, evt)
           
       backgroundStatusReader = threading.Thread(target=readProgrammeDataStatus)
-      backgroundStatusReader.start() # falls sub zu schnell lösläuft, kann es hier einen deadlock mit race-condidion geben
+      backgroundStatusReader.start() # falls sub zu schnell lösläuft, kann es hier durch race-condidion zu einem deadlock kommen
       backgroundDataReader = threading.Thread(target=readProgrammeDataXML)
       backgroundDataReader.start()
       
