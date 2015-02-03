@@ -10,6 +10,7 @@ import sys
 import traceback
 import xml.etree.ElementTree as ET
 import pickle
+import os
 
 RECORD_BUFFER_MINUTES = 5
 CRON_BUFFER_MINUTES = 2
@@ -24,7 +25,8 @@ TEXT_SCHEDULE_FAILURE = "Sendung konnte nicht zur Aufnahme eingeplant werden."
 TEXT_SCHEDULE_PAST = "Sendung schon vorbei."
 TEXT_EPG_UPDATING = "Bitte warten. Aktuelle Programminformationen werden geholt..."
 TEXT_EPG_NOINFO = "Keine Programminformationen verfügbar."
-TEXT_EPG_NOTITLE = 'Unbekannt'
+TEXT_EPG_GRABFAIL = "Programminformationen konnten nicht geholt werden."
+TEXT_EPG_NOTITLE = "Unbekannt"
 TEXT_EPG_TOCHANNELOVERVIEW = "zur Senderwahl"
 TEXT_EPG_LISTALLCHANNELS = "alle Sender"
 
@@ -122,20 +124,31 @@ class MainFrame ( vcrui.MainFrame ):
     wx.Yield()
 
     # remember which channel was chosen, then read epg data in background
+    # TODO: properly exit this mode upon user abort (currently, subprocess is not killed)
     self._selectedChannelName = channelName 
     self._selectedChannelID = channelID
-    self.readProgrammeData(channelName, channelID)
-    # TODO: properly exit this mode upon user abort (currently, subprocess is not killed)
+    if not os.getenv('EPG_DEMO', ""):
+      self.readProgrammeData(channelName, channelID)
+    else: # demo mode
+      channelID = "%s.dvb.guide"%channelID
+      dtStart = datetime.now()
+      dtStarts = [dtStart+timedelta(hours=i) for i in range(6)]
+      pairs = zip([None]+dtStarts,dtStarts)[1:]
+      programs = {channelID : [{'start':dtStart, 'stop':dtStop, 'title':"Demo %d"%(i)} for i,(dtStart, dtStop) in enumerate(pairs)] }
+      self.onProgrammeDataReady(programs)
   
   def onEPGData(self, evt):
-    if evt.status:
-      self.m_gauge.SetValue(int(1000.0/(1.0+2**(-float(evt.status)/300.0+5.0))) ) # fake status progress
     if evt.data:
       self.parseProgrammeData(evt.data)
-    if evt.message:
+    elif evt.message:
       if self.m_statusText:
         self.m_statusText.SetLabel(evt.message)
         self.m_scrolledWindow.GetSizer().Layout()
+    elif evt.status:
+      self.m_gauge.SetValue(int(1000.0/(1.0+2**(-float(evt.status)/300.0+5.0))) ) # fake status progress
+    elif self.m_statusText:
+      self.m_statusText.SetLabel(TEXT_EPG_GRABFAIL)
+      self.m_scrolledWindow.GetSizer().Layout()
   
   def onProgrammeDataReady(self, programs):
     self.m_scrolledWindow.GetSizer().Clear(True)
@@ -143,7 +156,7 @@ class MainFrame ( vcrui.MainFrame ):
     self.Layout()
     
   def addChannel(self, programs, channelName, channelID, forceDisplay=True):
-    debugStart = datetime.now()
+    #debugStart = datetime.now()
     channelID = "%s.dvb.guide"%channelID # TODO: move all instances of this conversion into separate function
     if channelID in programs or forceDisplay:
       channelPanel = vcrui.ChannelPanel(self.m_scrolledWindow)
@@ -167,7 +180,7 @@ class MainFrame ( vcrui.MainFrame ):
             addShow(dummyShow)
           previousShow = show
           addShow(show)
-    sys.stderr.write('generation of showlist for channel took %s\n'%(str(datetime.now() - debugStart)))
+    #sys.stderr.write('generation of showlist for channel took %s\n'%(str(datetime.now() - debugStart)))
 
   def loadProgrammeDataFromCache(self):
     try:
@@ -226,8 +239,10 @@ class MainFrame ( vcrui.MainFrame ):
         xmlepgdata = sub.stdout.read()
         sub.wait()
         if sub.returncode != 0:
-          raise RuntimeError("Abnormal script termination")
-        evt = EPGDataEvent(EPGDataEventType, -1, data=xmlepgdata)
+          evt = EPGDataEvent(EPGDataEventType, -1, message=TEXT_EPG_GRABFAIL)
+          #raise RuntimeError(TEXT_EPG_GRABFAIL)
+        else:
+          evt = EPGDataEvent(EPGDataEventType, -1, data=xmlepgdata)
         wx.PostEvent(self, evt)
           
       backgroundStatusReader = threading.Thread(target=readProgrammeDataStatus)
