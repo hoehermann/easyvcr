@@ -7,7 +7,12 @@ RECORD_PREFIX=$2
 RECORD_LENGTH=$3
 HASH=$4
 
-/usr/local/bin/tv-record "${CHANNEL_NAME}" "${RECORD_PREFIX}" "${RECORD_LENGTH}"
+
+until /usr/local/bin/tv-record "${CHANNEL_NAME}" "${RECORD_PREFIX}" "${RECORD_LENGTH}"
+do
+  sleep 1m
+  # TODO: refine with https://stackoverflow.com/questions/14309032/bash-script-difference-in-minutes-between-two-times
+done
 
 if [ "${HASH}" ]
 then

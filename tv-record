@@ -7,7 +7,16 @@ RECORD_DIR=/media/disk/Fernsehen
 CHANNEL_NAME=$1
 RECORD_PREFIX=$2
 RECORD_LENGTH=$3
-TIMESTAMP=`date +%s`
+TIMESTAMP=`date +%Y%m%d%a%H%M`
+RECORD_LOGFILE="record_${TIMESTAMP}.log"
+#RECORD_LOGFILE="/dev/null"
+#RECORD_LOGFILE="/dev/stderr"
+
+# quick and dirty: kill running capture processes
+killall ffmpeg
+sleep 1
+killall czap
+sleep 5
 
 cd ${RECORD_DIR}
 # try to tune
@@ -18,7 +27,7 @@ then
   CZAP_PID=$!
   # record and remux stream
   # mention -f mpegts before -i to define input stream format
-  avconv -i /dev/dvb/adapter0/dvr0 -c:a copy -c:v copy -t ${RECORD_LENGTH} -f mpegts "${CHANNEL_NAME} - ${RECORD_PREFIX} - ${TIMESTAMP}.ts" 2>"record_${TIMESTAMP}.log"
+  ffmpeg -i /dev/dvb/adapter0/dvr0 -c copy -t ${RECORD_LENGTH} -f mpegts "${CHANNEL_NAME} - ${RECORD_PREFIX} - ${TIMESTAMP}.ts" 2>"${RECORD_LOGFILE}"
   # kill tuner
   kill ${CZAP_PID}
 else
