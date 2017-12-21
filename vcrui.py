@@ -33,7 +33,7 @@ class MainFrame ( wx.Frame ):
 		bSizer5.Add( self.m_headline, 0, wx.EXPAND |wx.ALL, 5 )
 		
 		self.m_scrolledWindow = wx.ScrolledWindow( self, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, wx.HSCROLL|wx.VSCROLL )
-		self.m_scrolledWindow.SetScrollRate( 5, 5 )
+		self.m_scrolledWindow.SetScrollRate( 25, 25 )
 		bSizer6 = wx.BoxSizer( wx.VERTICAL )
 		
 		
