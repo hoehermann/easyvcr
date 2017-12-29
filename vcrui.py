@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*- 
 
 ###########################################################################
-## Python code generated with wxFormBuilder (version Jun  6 2014)
+## Python code generated with wxFormBuilder (version Feb 16 2016)
 ## http://www.wxformbuilder.org/
 ##
 ## PLEASE DO "NOT" EDIT THIS FILE!
@@ -17,7 +17,7 @@ import wx.xrc
 class MainFrame ( wx.Frame ):
 	
 	def __init__( self, parent ):
-		wx.Frame.__init__ ( self, parent, id = wx.ID_ANY, title = u"EPG", pos = wx.DefaultPosition, size = wx.Size( 500,300 ), style = wx.DEFAULT_FRAME_STYLE|wx.TAB_TRAVERSAL )
+		wx.Frame.__init__ ( self, parent, id = wx.ID_ANY, title = u"EPG", pos = wx.DefaultPosition, size = wx.DefaultSize, style = wx.DEFAULT_FRAME_STYLE|wx.TAB_TRAVERSAL )
 		
 		self.SetSizeHintsSz( wx.DefaultSize, wx.DefaultSize )
 		
@@ -33,7 +33,7 @@ class MainFrame ( wx.Frame ):
 		bSizer5.Add( self.m_headline, 0, wx.EXPAND |wx.ALL, 5 )
 		
 		self.m_scrolledWindow = wx.ScrolledWindow( self, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, wx.HSCROLL|wx.VSCROLL )
-		self.m_scrolledWindow.SetScrollRate( 5, 5 )
+		self.m_scrolledWindow.SetScrollRate( 25, 25 )
 		bSizer6 = wx.BoxSizer( wx.VERTICAL )
 		
 		
@@ -45,6 +45,7 @@ class MainFrame ( wx.Frame ):
 		
 		self.SetSizer( bSizer5 )
 		self.Layout()
+		bSizer5.Fit( self )
 		
 		self.Centre( wx.BOTH )
 	
@@ -59,7 +60,7 @@ class MainFrame ( wx.Frame ):
 class ChannelPanel ( wx.Panel ):
 	
 	def __init__( self, parent ):
-		wx.Panel.__init__ ( self, parent, id = wx.ID_ANY, pos = wx.DefaultPosition, size = wx.Size( 500,300 ), style = wx.TAB_TRAVERSAL|wx.VSCROLL )
+		wx.Panel.__init__ ( self, parent, id = wx.ID_ANY, pos = wx.DefaultPosition, size = wx.DefaultSize, style = wx.TAB_TRAVERSAL|wx.VSCROLL )
 		
 		channelPanelSizer = wx.BoxSizer( wx.VERTICAL )
 		
@@ -70,6 +71,7 @@ class ChannelPanel ( wx.Panel ):
 		
 		self.SetSizer( channelPanelSizer )
 		self.Layout()
+		channelPanelSizer.Fit( self )
 	
 	def __del__( self ):
 		pass
@@ -82,7 +84,7 @@ class ChannelPanel ( wx.Panel ):
 class TitlePanel ( wx.Panel ):
 	
 	def __init__( self, parent ):
-		wx.Panel.__init__ ( self, parent, id = wx.ID_ANY, pos = wx.DefaultPosition, size = wx.Size( 500,300 ), style = wx.RAISED_BORDER|wx.TAB_TRAVERSAL )
+		wx.Panel.__init__ ( self, parent, id = wx.ID_ANY, pos = wx.DefaultPosition, size = wx.DefaultSize, style = wx.RAISED_BORDER|wx.TAB_TRAVERSAL )
 		
 		bSizer3 = wx.BoxSizer( wx.VERTICAL )
 		
@@ -109,6 +111,7 @@ class TitlePanel ( wx.Panel ):
 		
 		self.SetSizer( bSizer3 )
 		self.Layout()
+		bSizer3.Fit( self )
 		
 		# Connect Events
 		self.m_sheduleRecordButton.Bind( wx.EVT_BUTTON, self.onSheduleRecordButtonClick )
@@ -129,13 +132,14 @@ class TitlePanel ( wx.Panel ):
 class ChannelListPanel ( wx.Panel ):
 	
 	def __init__( self, parent ):
-		wx.Panel.__init__ ( self, parent, id = wx.ID_ANY, pos = wx.DefaultPosition, size = wx.Size( 500,300 ), style = wx.TAB_TRAVERSAL )
+		wx.Panel.__init__ ( self, parent, id = wx.ID_ANY, pos = wx.DefaultPosition, size = wx.DefaultSize, style = wx.TAB_TRAVERSAL )
 		
 		gSizer1 = wx.GridSizer( 0, 3, 0, 0 )
 		
 		
 		self.SetSizer( gSizer1 )
 		self.Layout()
+		gSizer1.Fit( self )
 	
 	def __del__( self ):
 		pass
