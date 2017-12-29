@@ -1,6 +1,8 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
+# TODO: dateinamen von schwierigen sonderzeichen säubern, u.A. /? usw
+
 import wx
 import vcrui
 from datetime import datetime, timedelta
@@ -57,45 +59,50 @@ class TitlePanel ( vcrui.TitlePanel ):
     self.m_startLabel.SetLabel(show['start'].strftime('%a, %d. %b. %H:%M')) # TODO: eigenes label für tag, separator für "von... bis..."
     self.m_stopLabel.SetLabel(show['stop'].strftime('%H:%M'))
     
-  def onSheduleRecordButtonClick( self, event ):
+  @staticmethod
+  def prepareScheduleRecordCommand( channelName, show ):
+    schedule = None
     now = datetime.now()
-    start = self.show['start']
-    stop = self.show['stop']
+    start = show['start']
+    stop = show['stop']
     if RECORD_BUFFER_MINUTES != 0:
       start = start - timedelta(minutes=RECORD_BUFFER_MINUTES)
       stop = stop + timedelta(minutes=RECORD_BUFFER_MINUTES)
-    channelName = self.channelName
-    title = self.show['title']
+    title = show['title']
     if start > now + timedelta(minutes=CRON_BUFFER_MINUTES):
-      startMinute = start.minute
-      startHour = start.hour
-      startDay = start.day
-      startMonth = start.month
-      startYear = start.day 
+      schedule = True
       weekday = ""
+      startYear = ""
       length = stop-start
-      args = map(str,['tv-schedule-record',startMinute, startHour, startDay, startMonth, startYear, weekday, length, channelName, title.encode('utf-8')])
-      try:
-        returncode = subprocess.call(args)
-      except e:
-        returncode = -1
-      if returncode == 0:
-        wx.MessageDialog(self, TEXT_SCHEDULE_SUCCESS%(title), "", wx.OK | wx.ICON_INFORMATION).ShowModal()
-      else:
-        wx.MessageDialog(self, TEXT_SCHEDULE_FAILURE, "", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
+      args = map(str,['tv-schedule-record',start.minute, start.hour, start.day, start.month, startYear, weekday, length, channelName, title.encode('utf-8')])
     elif stop > now:
+      schedule = False
       length = stop-now
       args = map(str,['screen', '-m', '-d', 'tv-record', channelName, title.encode('utf-8'), length])
+    return (schedule, args)
+    
+  def onSheduleRecordButtonClick( self, event ):
+    schedule, args = self.prepareScheduleRecordCommand(self.channelName, self.show)
+    if schedule is None:
+      wx.MessageDialog(self, TEXT_SCHEDULE_PAST, "", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
+    elif schedule:
       try:
         returncode = subprocess.call(args)
       except e:
         returncode = -1
       if returncode == 0:
-        wx.MessageDialog(self, TEXT_LIVERECORD_SUCCESS%(title), "", wx.OK | wx.ICON_INFORMATION).ShowModal()
+        wx.MessageDialog(self, TEXT_SCHEDULE_SUCCESS%(self.show['title']), "", wx.OK | wx.ICON_INFORMATION).ShowModal()
       else:
         wx.MessageDialog(self, TEXT_SCHEDULE_FAILURE, "", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
     else:
-      wx.MessageDialog(self, TEXT_SCHEDULE_PAST, "", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
+      try:
+        returncode = subprocess.call(args)
+      except e:
+        returncode = -1
+      if returncode == 0:
+        wx.MessageDialog(self, TEXT_LIVERECORD_SUCCESS%(self.show['title']), "", wx.OK | wx.ICON_INFORMATION).ShowModal()
+      else:
+        wx.MessageDialog(self, TEXT_SCHEDULE_FAILURE, "", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
 
 class MainFrame ( vcrui.MainFrame ):
   def __init__(self,parent):
@@ -108,8 +115,12 @@ class MainFrame ( vcrui.MainFrame ):
     
   def addChannelSelectButton(self, channelName, channelID, parent):
     button = wx.Button( parent, wx.ID_ANY, channelName, wx.DefaultPosition, wx.DefaultSize, 0 )
+    button.SetToolTip( wx.ToolTip(channelName) )
     parent.GetSizer().Add( button, 0, wx.ALL|wx.EXPAND, 5 )
-    button.Bind( wx.EVT_BUTTON, lambda event: self.onChannelSelectButtonClick(channelName, channelID, event ) )
+    button.Bind( 
+      wx.EVT_BUTTON, 
+      lambda event: self.onChannelSelectButtonClick(channelName, channelID, event) 
+    )
     
   def onChannelSelectButtonClick( self, channelName, channelID, event ):
     self.m_scrolledWindow.GetSizer().Clear(True)
@@ -173,9 +184,14 @@ class MainFrame ( vcrui.MainFrame ):
         titlePanel.SetShow(show)
         titlePanel.SetChannelName(channelName)
         channelPanel.GetSizer().Add(titlePanel, 0, wx.ALL|wx.EXPAND)
+        #sys.stdout.write("addShow: %s\n"%(str(show)))
+        #print("' '".join(TitlePanel.prepareScheduleRecordCommand(channelName,show)[1])+"'")
       for show in programs[channelID]: #programs[channelID] should be pre-sorted
         if show['stop'] > now:
-          if previousShow and not previousShow['stop'] == show['start']:
+          if ( previousShow 
+            and not previousShow['stop'] == show['start']
+            and not previousShow['stop'] > show['start'] # TODO
+            ):
             dummyShow = {'start':previousShow['stop'], 'stop':show['start'], 'title':TEXT_EPG_NOTITLE}
             addShow(dummyShow)
           previousShow = show
@@ -260,6 +276,8 @@ class MainFrame ( vcrui.MainFrame ):
       transponderChannels = []
       #tree = ET.parse('program.xml')
       #root = tree.getroot()
+      #print(xmlepgdata)
+      xmlepgdata = xmlepgdata.replace("\x1A","") # TODO: sanitize properly
       root = ET.fromstring(xmlepgdata)
       for programme in root.iter('programme'):
         sChannel = programme.get('channel')
@@ -270,14 +288,15 @@ class MainFrame ( vcrui.MainFrame ):
           if titleLang in EPG_TITLE_LANGUAGES:
             sTitle = title.text
         
-        # these ignore timezone information
+        # NOTE: these ignore timezone information
         dtStart = datetime.strptime(programme.get('start').split(' ')[0], '%Y%m%d%H%M%S')
         dtStop = datetime.strptime(programme.get('stop').split(' ')[0], '%Y%m%d%H%M%S')
         show = {'start':dtStart, 'stop':dtStop, 'title':sTitle}
         if sChannel not in transponderChannels:
           transponderChannels.append(sChannel)
           #programs[sChannel] = [show] # purge cached, probabaly old information by overwriting
-          # now keeps all information as sometimes multiple runs are neccessary? TODO: investigate source of error (maybe the stream does not always contain all information)
+          # now keeps all information as sometimes multiple runs are neccessary?
+          # TODO: investigate source of error (maybe the stream does not always contain all information)
         #else:
         if sChannel not in programs:
           programs[sChannel] = [show]
@@ -309,7 +328,9 @@ class MainFrame ( vcrui.MainFrame ):
   def listChannels(self):
     self.m_scrolledWindow.GetSizer().Clear(True)
     channelListPanel = vcrui.ChannelListPanel(self.m_scrolledWindow)
-    for line in sorted([line.strip() for line in open('channels.conf')]): # TODO: try/catch for file-operation and possible encoding issues
+    for line in sorted([line.strip() for line in open('channels.conf')], key=lambda s: s.lower()): 
+      # TODO: first split, then sort by name, then iterate
+      # TODO: try/catch for file-operation and possible encoding issues
       if line[0] != '#' and line[0] != ';' :
         split = line.split(':')
         self.addChannelSelectButton(split[0], split[8], channelListPanel)
