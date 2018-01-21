@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # This script records live TV
-# Note: RECORD_LENGTH defines the length of the captured video. If the input stream is damaged and frames are lost, they do not count towards the captured video length.
+
+# Note: RECORD_LENGTH defines the length of the captured video. If the input stream is damaged and frames are lost, they may not count towards the captured video length.
 
 RECORD_DIR=/media/disk/Fernsehen
 CHANNEL_NAME=$1

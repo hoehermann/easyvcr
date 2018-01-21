@@ -1,8 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-# TODO: dateinamen von schwierigen sonderzeichen säubern, u.A. /? usw
-
 import wx
 import vcrui
 from datetime import datetime, timedelta
@@ -68,24 +66,31 @@ class TitlePanel ( vcrui.TitlePanel ):
     if RECORD_BUFFER_MINUTES != 0:
       start = start - timedelta(minutes=RECORD_BUFFER_MINUTES)
       stop = stop + timedelta(minutes=RECORD_BUFFER_MINUTES)
-    title = show['title']
+    title = show['title'].replace(u"/",u"／") # TODO: introduce thorough sanitizing
     if start > now + timedelta(minutes=CRON_BUFFER_MINUTES):
+      # schedule to record future show
       schedule = True
       weekday = ""
       startYear = ""
       length = stop-start
       args = map(str,['tv-schedule-record',start.minute, start.hour, start.day, start.month, startYear, weekday, length, channelName, title.encode('utf-8')])
     elif stop > now:
+      # show is already on air, record live
       schedule = False
       length = stop-now
       args = map(str,['screen', '-m', '-d', 'tv-record', channelName, title.encode('utf-8'), length])
+    else:
+      # show is in the past, cannot schedule
+      pass
     return (schedule, args)
     
   def onSheduleRecordButtonClick( self, event ):
     schedule, args = self.prepareScheduleRecordCommand(self.channelName, self.show)
     if schedule is None:
+      # show is in the past, cannot schedule
       wx.MessageDialog(self, TEXT_SCHEDULE_PAST, "", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
     elif schedule:
+      # schedule to record future show
       try:
         returncode = subprocess.call(args)
       except e:
@@ -95,6 +100,7 @@ class TitlePanel ( vcrui.TitlePanel ):
       else:
         wx.MessageDialog(self, TEXT_SCHEDULE_FAILURE, "", wx.OK | wx.ICON_EXCLAMATION).ShowModal()
     else:
+      # show is already on air, record live
       try:
         returncode = subprocess.call(args)
       except e:
